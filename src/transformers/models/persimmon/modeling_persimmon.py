@@ -45,7 +45,7 @@ from ...modeling_rope_utils import (
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import auto_docstring, can_return_tuple, is_torch_flex_attn_available, logging
-from ...utils.generic import maybe_autocast
+from ...utils.generic import is_flash_attention_requested, maybe_autocast
 from .configuration_persimmon import PersimmonConfig
 
 
@@ -310,9 +310,9 @@ class PersimmonAttention(nn.Module):
             }
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+            self.config._attn_implementation, eager_attention_forward
+        )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -550,7 +550,7 @@ class PersimmonModel(PersimmonPreTrainedModel):
         past_key_values: Cache,
         output_attentions: bool = False,
     ):
-        if self.config._attn_implementation == "flash_attention_2":
+        if is_flash_attention_requested(self.config):
             if attention_mask is not None and (attention_mask == 0.0).any():
                 return attention_mask
             return None

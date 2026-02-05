@@ -47,7 +47,7 @@ from ...utils import (
     auto_docstring,
     logging,
 )
-from ...utils.generic import maybe_autocast
+from ...utils.generic import is_flash_attention_requested, maybe_autocast
 from .configuration_falcon import FalconConfig
 
 
@@ -511,12 +511,7 @@ class FalconFlashAttention2(FalconAttention):
         device_type = query_layer.device.type if query_layer.device.type != "mps" else "cpu"
         if input_dtype == torch.float32:
             if torch.is_autocast_enabled():
-                # NOTE: `torch.get_autocast_dtype` is there starting from PyTorch 2.4
-                target_dtype = (
-                    torch.get_autocast_dtype(device_type)
-                    if hasattr(torch, "get_autocast_dtype")
-                    else torch.get_autocast_gpu_dtype()
-                )
+                target_dtype = torch.get_autocast_dtype(device_type)
             # Handle the case where the model is quantized
             elif hasattr(self.config, "_is_quantized"):
                 target_dtype = self.config.dtype
@@ -859,7 +854,7 @@ class FalconModel(FalconPreTrainedModel):
         # (`recording cudagraph tree for symint key 13`, etc.), which is VERY slow. A workaround is `@torch.compiler.disable`, but this prevents using
         # `fullgraph=True`. See more context in https://github.com/huggingface/transformers/pull/29114
 
-        if self.config._attn_implementation == "flash_attention_2":
+        if is_flash_attention_requested(self.config):
             if attention_mask is not None and 0.0 in attention_mask:
                 return attention_mask
             return None

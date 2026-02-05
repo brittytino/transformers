@@ -33,7 +33,7 @@ from ...modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast,
 from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ...modeling_utils import PreTrainedModel
 from ...utils import auto_docstring, is_torch_flex_attn_available, logging
-from ...utils.generic import maybe_autocast
+from ...utils.generic import is_flash_attention_requested, maybe_autocast
 from ..auto.modeling_auto import AutoModel
 from .configuration_moshi import MoshiConfig, MoshiDepthConfig
 
@@ -599,12 +599,7 @@ class MoshiFlashAttention2(MoshiAttention):
         device_type = query_states.device.type if query_states.device.type != "mps" else "cpu"
         if input_dtype == torch.float32:
             if torch.is_autocast_enabled():
-                # NOTE: `torch.get_autocast_dtype` is there starting from PyTorch 2.4
-                target_dtype = (
-                    torch.get_autocast_dtype(device_type)
-                    if hasattr(torch, "get_autocast_dtype")
-                    else torch.get_autocast_gpu_dtype()
-                )
+                target_dtype = torch.get_autocast_dtype(device_type)
             # Handle the case where the model is quantized
             elif hasattr(self.config, "_is_quantized"):
                 target_dtype = self.config.dtype
@@ -1052,7 +1047,7 @@ class MoshiDepthDecoder(MoshiPreTrainedModel, GenerationMixin):
         past_key_values: Cache,
         output_attentions: bool = False,
     ):
-        if self.config._attn_implementation == "flash_attention_2":
+        if is_flash_attention_requested(self.config):
             if attention_mask is not None and past_key_values is not None:
                 is_padding_right = attention_mask[:, -1].sum().item() != input_tensor.size()[0]
                 if is_padding_right:
@@ -1316,7 +1311,7 @@ class MoshiModel(MoshiPreTrainedModel):
         past_key_values: Cache,
         output_attentions: bool = False,
     ):
-        if self.config._attn_implementation == "flash_attention_2":
+        if is_flash_attention_requested(self.config):
             if attention_mask is not None and past_key_values is not None:
                 is_padding_right = attention_mask[:, -1].sum().item() != input_tensor.size()[0]
                 if is_padding_right:
